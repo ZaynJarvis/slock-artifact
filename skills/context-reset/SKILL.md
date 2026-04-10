@@ -23,7 +23,13 @@ Follow these steps in order. This is the agent's responsibility — execute all 
 
 ### Step 1: Save context to memory
 
-Before anything else, review your current conversation and update your memory files in the project memory directory. Focus on:
+Before anything else, update memory in **two locations**:
+
+**A. Slock workspace MEMORY.md** — This is the MEMORY.md in your agent's working directory (e.g., `~/.slock/agents/<agent-id>/MEMORY.md`). This is what slock's system prompt reads on every startup. Update it with your role, team, repos, completed work, active tasks, and key rules.
+
+**B. Claude project memory** — The `~/.claude/projects/<project-id>/memory/` directory. Write individual memory files here for detailed context that benefits from the frontmatter format.
+
+Focus on:
 
 - **Project state**: What's been built, what's in progress, what's blocked
 - **Key decisions**: Architecture choices, tool selections, patterns adopted
