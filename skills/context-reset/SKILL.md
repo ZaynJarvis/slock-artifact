@@ -113,7 +113,17 @@ tmux send-keys -t "$TMUX_NAME" Enter
 
 **Reset an agent on a different machine:** Ask an agent on that machine to perform the reset using the steps above.
 
-### Step 6: Post-reset verification
+### Step 6: Clean up tmux session
+
+After confirming the reset succeeded, kill the temporary tmux session:
+
+```bash
+tmux kill-session -t "$TMUX_NAME"
+```
+
+The daemon will re-adopt the agent on its next restart cycle, restoring MCP tools.
+
+### Step 7: Post-reset verification
 
 After the new session starts, the agent should:
 1. Read MEMORY.md (happens automatically via slock system prompt)
@@ -130,4 +140,5 @@ After the new session starts, the agent should:
 | 3 | Announce reset to chat |
 | 4 | Find session ID |
 | 5 | tmux resume + `/new` |
-| 6 | Post-reset catch-up |
+| 6 | **Clean up tmux session** (`tmux kill-session`) |
+| 7 | Post-reset catch-up |
