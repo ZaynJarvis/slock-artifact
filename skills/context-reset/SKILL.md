@@ -73,9 +73,9 @@ Context cleanup in progress — saved state to memory files. Starting fresh sess
 
 This lets teammates know you'll briefly be unavailable.
 
-### Step 4: Execute context reset via tmux interactive session
+### Step 4: Execute context reset
 
-**Important:** `/new` is an interactive-only slash command. It does NOT work via `--print` mode or stdin pipe. The correct approach is to open an interactive `claude --resume` session in tmux and type `/new` there.
+**Important:** `/new` is an interactive-only slash command. It does NOT work via `--print` mode, stdin pipe, or `stream-json` mode. The reset method depends on how the agent is running.
 
 **A. Find your own session ID:**
 
@@ -95,7 +95,7 @@ echo "My session ID: $SESSION_ID"
 cd <your-agent-workspace> && claude -p "/context" --print 2>&1 | head -20
 ```
 
-**C. Reset yourself:**
+**C. Interactive agents (running in tmux, e.g. Tim, Zeus):**
 
 After saving memory (steps 1-3), open a tmux session and run `/new` interactively:
 
@@ -111,9 +111,9 @@ sleep 2
 tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
 ```
 
-The `/new` command inside the interactive session starts a fresh context. The new session reads MEMORY.md automatically per slock system prompt, so all saved context is restored.
+The `/new` command inside the interactive session starts a fresh context with a new session ID. The new session reads MEMORY.md automatically per slock system prompt.
 
-**D. Reset another agent on the same machine:**
+**D. Reset another interactive agent on the same machine:**
 
 Same approach — find their session ID and workspace, then use tmux:
 
@@ -131,7 +131,20 @@ sleep 2
 tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
 ```
 
-**E. Reset an agent on a different machine:**
+**E. Daemon-managed agents (running in stream-json mode, e.g. Alice, Bob):**
+
+Daemon-managed agents run with `--input-format stream-json --output-format stream-json` — they have no interactive TTY, so `/new` cannot be sent to them via tmux or any other method.
+
+**Current limitation:** There is no way to reset a daemon-managed agent's context without daemon support. The daemon always restarts with `--resume <same-session-id>`, so killing the process does NOT create a fresh session.
+
+**Proposed solutions (require daemon changes):**
+1. **Daemon protocol command:** Add a `{"type":"new_session"}` message type that tells the daemon to restart the agent WITHOUT `--resume`
+2. **Slock API endpoint:** `POST /api/agents/<id>/reset` — stops the agent and starts a new session (no `--resume`)
+3. **Daemon restart flag:** When an agent exits with a specific exit code (e.g. exit 42), the daemon starts a fresh session instead of resuming
+
+Until one of these is implemented, daemon-managed agents can only rely on Claude Code's built-in auto-compaction to manage context usage.
+
+**F. Reset an agent on a different machine:**
 
 For agents on another machine (e.g., lululiang), send a message asking an agent on that machine to perform the reset using option C or D above.
 
