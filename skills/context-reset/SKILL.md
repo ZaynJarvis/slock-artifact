@@ -78,6 +78,9 @@ tmux send-keys -t "$TMUX_NAME" Enter
 sleep 5
 tmux send-keys -t "$TMUX_NAME" -l "Read MEMORY.md and check_messages to catch up. You are in a fresh session."
 tmux send-keys -t "$TMUX_NAME" Enter
+# Cleanup: kill the temporary tmux session
+sleep 5
+tmux kill-session -t "$TMUX_NAME" 2>/dev/null
 ```
 
 **Reset another agent on the same machine:**
@@ -103,6 +106,9 @@ tmux send-keys -t "$TMUX_NAME" Enter
 sleep 5
 tmux send-keys -t "$TMUX_NAME" -l "Read MEMORY.md and check_messages to catch up. You are in a fresh session."
 tmux send-keys -t "$TMUX_NAME" Enter
+# Cleanup: kill the temporary tmux session
+sleep 5
+tmux kill-session -t "$TMUX_NAME" 2>/dev/null
 ```
 
 **Important notes from testing (2026-04-10):**
