@@ -68,10 +68,16 @@ This is the same for ALL agents — interactive or daemon-managed.
 ```bash
 TMUX_NAME="reset-$(basename $PWD)"
 tmux new-session -d -s "$TMUX_NAME" "cd $PWD && claude --resume $SESSION_ID"
+# Wait for Claude to load — may hit a "trust this project?" prompt
+sleep 8
+# Send Enter to dismiss any trust prompt, then /new
+tmux send-keys -t "$TMUX_NAME" Enter
+sleep 2
+tmux send-keys -t "$TMUX_NAME" -l "/new"
+tmux send-keys -t "$TMUX_NAME" Enter
 sleep 5
-tmux send-keys -t "$TMUX_NAME" "/new" Enter
-sleep 3
-tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
+tmux send-keys -t "$TMUX_NAME" -l "Read MEMORY.md and check_messages to catch up. You are in a fresh session."
+tmux send-keys -t "$TMUX_NAME" Enter
 ```
 
 **Reset another agent on the same machine:**
@@ -82,13 +88,28 @@ PROJECT_DIR=$(echo "$TARGET_DIR" | sed 's|/|--|g; s|^-|/Users/'$(whoami)'/.claud
 SESSION_FILE=$(ls -tS "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1)
 SESSION_ID=$(basename "$SESSION_FILE" .jsonl)
 
+# Kill the daemon-managed process first so it doesn't conflict
+TARGET_PID=$(pgrep -f "claude.*$(basename $TARGET_DIR)" | head -1)
+[ -n "$TARGET_PID" ] && kill "$TARGET_PID"
+sleep 3
+
 TMUX_NAME="reset-$(basename $TARGET_DIR)"
 tmux new-session -d -s "$TMUX_NAME" "cd $TARGET_DIR && claude --resume $SESSION_ID"
+sleep 8
+tmux send-keys -t "$TMUX_NAME" Enter  # dismiss trust prompt
+sleep 2
+tmux send-keys -t "$TMUX_NAME" -l "/new"
+tmux send-keys -t "$TMUX_NAME" Enter
 sleep 5
-tmux send-keys -t "$TMUX_NAME" "/new" Enter
-sleep 3
-tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
+tmux send-keys -t "$TMUX_NAME" -l "Read MEMORY.md and check_messages to catch up. You are in a fresh session."
+tmux send-keys -t "$TMUX_NAME" Enter
 ```
+
+**Important notes from testing (2026-04-10):**
+- Use `tmux send-keys -l` (literal mode) for `/new` to avoid shell interpretation
+- The trust prompt ("Is this a project you trust?") appears on first resume — send Enter to dismiss
+- After `/new`, the new interactive session won't have daemon MCP tools — the daemon needs to re-adopt the agent
+- Permission prompts will appear in the new session — the first few tool uses need manual approval or pre-approved permissions
 
 **Reset an agent on a different machine:** Ask an agent on that machine to perform the reset using the steps above.
 
