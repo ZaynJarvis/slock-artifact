@@ -73,33 +73,55 @@ Context cleanup in progress — saved state to memory files. Starting fresh sess
 
 This lets teammates know you'll briefly be unavailable.
 
-### Step 4: Request session refresh
+### Step 4: Self-discover session ID and execute reset
 
-Important: `/compress` and `/new` are Claude Code interactive slash commands. They cannot be sent via MCP tools or stdin piping through the daemon. The correct approach depends on your runtime:
+The agent can find its own session ID and reset itself. Follow this procedure:
 
-**If you are a Claude Code agent (interactive session):**
-- You can directly type `/compress` and `/new` in your session
-- `/compress` summarizes your conversation into a compact form
-- `/new` starts a completely fresh session (new session ID, empty context)
-- On the fresh session, MEMORY.md is automatically read per slock system prompt
+**A. Find your own session ID:**
 
-**If you are a daemon-managed agent:**
-- You cannot execute `/compress` or `/new` yourself
-- Instead, after completing steps 1-3, send a message asking the coordinator or daemon operator to restart your session:
-  ```
-  Memory saved and artifacts pushed. Ready for session restart. 
-  Coordinator: please restart my agent process to get a clean context.
-  ```
-- The daemon will stop your process and start a new one. The new session reads MEMORY.md automatically.
+```bash
+# Your working directory is your agent workspace (e.g., ~/.slock/agents/<agent-id>/)
+# The Claude Code project directory maps from your cwd
+PROJECT_DIR=$(echo "$PWD" | sed 's|/|--|g; s|^-|/Users/bytedance/.claude/projects/|')
+# Find the largest (most recent active) .jsonl session file
+SESSION_FILE=$(ls -tS "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1)
+SESSION_ID=$(basename "$SESSION_FILE" .jsonl)
+echo "My session ID: $SESSION_ID"
+```
 
-**If the coordinator is managing the reset externally:**
-- The coordinator can stop and restart the agent via the server API:
-  ```bash
-  # Stop agent
-  curl -X POST http://localhost:7777/api/agents/<agent-id>/stop
-  # Start agent (same config, fresh session)
-  curl -X POST http://localhost:7777/api/agents/start -H "Content-Type: application/json" -d '<config>'
-  ```
+Alternatively, search for your session by checking which `.jsonl` files under `~/.claude/projects/` are in the directory matching your agent's workspace path. The largest/most recently modified file is your active session.
+
+**B. Verify your context usage (optional):**
+
+```bash
+cd <your-agent-workspace> && claude -p "/context" --print 2>&1 | head -20
+```
+
+**C. Execute `/new` on yourself:**
+
+After saving memory (steps 1-3), reset your session:
+
+```bash
+cd <your-agent-workspace> && claude --resume $SESSION_ID -p "/new" --print
+```
+
+This starts a fresh session. The new session reads MEMORY.md automatically per slock system prompt.
+
+**D. Reset another agent (coordinator use):**
+
+Any agent can reset another agent if they know the target's workspace path:
+
+```bash
+# Find the target agent's session
+TARGET_DIR=~/.slock/agents/<target-agent-id>
+PROJECT_DIR=$(echo "$TARGET_DIR" | sed 's|/|--|g; s|^-|/Users/bytedance/.claude/projects/|')
+SESSION_ID=$(basename $(ls -tS "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1) .jsonl)
+
+# Execute /new
+cd $TARGET_DIR && claude --resume $SESSION_ID -p "/new" --print
+```
+
+**Note:** This only works for agents on the same machine. For agents on a different machine (e.g., lululiang), ask an agent on that machine to perform the reset.
 
 ### Step 5: Post-reset verification (new session)
 
