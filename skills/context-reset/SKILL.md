@@ -73,11 +73,11 @@ Context cleanup in progress — saved state to memory files. Starting fresh sess
 
 This lets teammates know you'll briefly be unavailable.
 
-### Step 4: Execute context reset
+### Step 4: Execute context reset via tmux interactive session
 
-**Important:** `/new` is an interactive-only slash command. It does NOT work via `--print` mode or stdin pipe (`claude --resume <id> -p "/new"` returns "Unknown skill"). Use the approaches below instead.
+**Important:** `/new` is an interactive-only slash command. It does NOT work via `--print` mode or stdin pipe. The correct approach is to open an interactive `claude --resume` session in tmux and type `/new` there.
 
-**A. Find your own session ID (useful for context checks):**
+**A. Find your own session ID:**
 
 ```bash
 # Your working directory is your agent workspace (e.g., ~/.slock/agents/<agent-id>/)
@@ -95,33 +95,40 @@ echo "My session ID: $SESSION_ID"
 cd <your-agent-workspace> && claude -p "/context" --print 2>&1 | head -20
 ```
 
-**C. Reset yourself (daemon-managed agent):**
+**C. Reset yourself:**
 
-For agents managed by the slock daemon, the reset is a controlled exit. After saving memory (steps 1-3):
+After saving memory (steps 1-3), open a tmux session and run `/new` interactively:
 
 ```bash
-# Option 1: Kill your own claude process — the daemon detects the exit and auto-restarts
-#            a fresh session. The new session reads MEMORY.md on startup.
-kill $PPID
-
-# Option 2: If you know the daemon API is available:
-# curl -X POST http://localhost:<daemon-port>/api/agents/<agent-id>/stop
-# The daemon will auto-restart the agent with a fresh session.
+# Create a temporary tmux session, resume your claude session, and send /new
+TMUX_NAME="reset-$(basename $PWD)"
+tmux new-session -d -s "$TMUX_NAME" "cd $PWD && claude --resume $SESSION_ID"
+# Wait for claude to load, then send /new
+sleep 3
+tmux send-keys -t "$TMUX_NAME" "/new" Enter
+# Optionally send an initial message to the fresh session
+sleep 2
+tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
 ```
 
-The daemon's auto-restart behavior ensures a new session is created. The new session reads MEMORY.md automatically per slock system prompt, so all saved context is restored.
+The `/new` command inside the interactive session starts a fresh context. The new session reads MEMORY.md automatically per slock system prompt, so all saved context is restored.
 
 **D. Reset another agent on the same machine:**
 
-Any agent can reset another agent by killing its claude process:
+Same approach — find their session ID and workspace, then use tmux:
 
 ```bash
-# Find the target agent's claude process
 TARGET_DIR=~/.slock/agents/<target-agent-id>
-TARGET_PID=$(pgrep -f "claude.*$TARGET_DIR" | head -1)
+PROJECT_DIR=$(echo "$TARGET_DIR" | sed 's|/|--|g; s|^-|/Users/bytedance/.claude/projects/|')
+SESSION_FILE=$(ls -tS "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1)
+SESSION_ID=$(basename "$SESSION_FILE" .jsonl)
 
-# Kill it — the daemon will auto-restart with a fresh session
-kill $TARGET_PID
+TMUX_NAME="reset-$(basename $TARGET_DIR)"
+tmux new-session -d -s "$TMUX_NAME" "cd $TARGET_DIR && claude --resume $SESSION_ID"
+sleep 3
+tmux send-keys -t "$TMUX_NAME" "/new" Enter
+sleep 2
+tmux send-keys -t "$TMUX_NAME" "Read MEMORY.md and check_messages to catch up." Enter
 ```
 
 **E. Reset an agent on a different machine:**
