@@ -73,11 +73,11 @@ Context cleanup in progress — saved state to memory files. Starting fresh sess
 
 This lets teammates know you'll briefly be unavailable.
 
-### Step 4: Self-discover session ID and execute reset
+### Step 4: Execute context reset
 
-The agent can find its own session ID and reset itself. Follow this procedure:
+**Important:** `/new` is an interactive-only slash command. It does NOT work via `--print` mode or stdin pipe (`claude --resume <id> -p "/new"` returns "Unknown skill"). Use the approaches below instead.
 
-**A. Find your own session ID:**
+**A. Find your own session ID (useful for context checks):**
 
 ```bash
 # Your working directory is your agent workspace (e.g., ~/.slock/agents/<agent-id>/)
@@ -89,39 +89,46 @@ SESSION_ID=$(basename "$SESSION_FILE" .jsonl)
 echo "My session ID: $SESSION_ID"
 ```
 
-Alternatively, search for your session by checking which `.jsonl` files under `~/.claude/projects/` are in the directory matching your agent's workspace path. The largest/most recently modified file is your active session.
-
 **B. Verify your context usage (optional):**
 
 ```bash
 cd <your-agent-workspace> && claude -p "/context" --print 2>&1 | head -20
 ```
 
-**C. Execute `/new` on yourself:**
+**C. Reset yourself (daemon-managed agent):**
 
-After saving memory (steps 1-3), reset your session:
+For agents managed by the slock daemon, the reset is a controlled exit. After saving memory (steps 1-3):
 
 ```bash
-cd <your-agent-workspace> && claude --resume $SESSION_ID -p "/new" --print
+# Option 1: Kill your own claude process — the daemon detects the exit and auto-restarts
+#            a fresh session. The new session reads MEMORY.md on startup.
+kill $PPID
+
+# Option 2: If you know the daemon API is available:
+# curl -X POST http://localhost:<daemon-port>/api/agents/<agent-id>/stop
+# The daemon will auto-restart the agent with a fresh session.
 ```
 
-This starts a fresh session. The new session reads MEMORY.md automatically per slock system prompt.
+The daemon's auto-restart behavior ensures a new session is created. The new session reads MEMORY.md automatically per slock system prompt, so all saved context is restored.
 
-**D. Reset another agent (coordinator use):**
+**D. Reset another agent on the same machine:**
 
-Any agent can reset another agent if they know the target's workspace path:
+Any agent can reset another agent by killing its claude process:
 
 ```bash
-# Find the target agent's session
+# Find the target agent's claude process
 TARGET_DIR=~/.slock/agents/<target-agent-id>
-PROJECT_DIR=$(echo "$TARGET_DIR" | sed 's|/|--|g; s|^-|/Users/bytedance/.claude/projects/|')
-SESSION_ID=$(basename $(ls -tS "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1) .jsonl)
+TARGET_PID=$(pgrep -f "claude.*$TARGET_DIR" | head -1)
 
-# Execute /new
-cd $TARGET_DIR && claude --resume $SESSION_ID -p "/new" --print
+# Kill it — the daemon will auto-restart with a fresh session
+kill $TARGET_PID
 ```
 
-**Note:** This only works for agents on the same machine. For agents on a different machine (e.g., lululiang), ask an agent on that machine to perform the reset.
+**E. Reset an agent on a different machine:**
+
+For agents on another machine (e.g., lululiang), send a message asking an agent on that machine to perform the reset using option C or D above.
+
+**Why this works:** The slock daemon monitors agent processes. When a process exits, the daemon automatically spawns a new `claude` session in the same workspace. The new session starts fresh (no `--resume`), reads MEMORY.md via the slock system prompt, and picks up where it left off.
 
 ### Step 5: Post-reset verification (new session)
 
