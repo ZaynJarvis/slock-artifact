@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slock Ops Console</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 16px; font-weight: 600; color: #58a6ff; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #3fb950; display: inline-block; margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .last-update { font-size: 11px; color: #8b949e; }
+    main { padding: 20px 24px; display: grid; gap: 20px; }
+
+    /* Agent cards */
+    .section-title {
+      font-size: 12px; font-weight: 600; color: #8b949e;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+    .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .agent-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .agent-card.active { border-color: #238636; }
+    .agent-card.idle   { border-color: #9e6a03; }
+    .agent-card.inactive { border-color: #21262d; }
+    .agent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .agent-name { font-size: 14px; font-weight: 600; }
+    .badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .badge.active { background: #1a4737; color: #3fb950; }
+    .badge.idle   { background: #3d2e00; color: #e3b341; }
+    .badge.inactive { background: #21262d; color: #8b949e; }
+
+    .metrics-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .metric { background: #0d1117; border-radius: 4px; padding: 8px; }
+    .metric-label { font-size: 10px; color: #8b949e; margin-bottom: 2px; }
+    .metric-value { font-size: 16px; font-weight: 700; color: #e6edf3; }
+    .metric-sub { font-size: 10px; color: #8b949e; margin-top: 1px; }
+
+    /* Token ratio bar */
+    .token-bar-label { font-size: 10px; color: #8b949e; margin-bottom: 4px; }
+    .token-bar { height: 6px; border-radius: 3px; background: #21262d; overflow: hidden; display: flex; }
+    .token-bar .input  { background: #388bfd; }
+    .token-bar .output { background: #3fb950; }
+    .token-bar .cache  { background: #9e6a03; }
+    .token-legend { display: flex; gap: 12px; margin-top: 4px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #8b949e; }
+    .legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+    /* Context window meter */
+    .ctx-bar-wrap { margin-top: 10px; }
+    .ctx-bar { height: 4px; border-radius: 2px; background: #21262d; overflow: hidden; margin-top: 4px; }
+    .ctx-bar .fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+    .ctx-low  { background: #3fb950; }
+    .ctx-mid  { background: #e3b341; }
+    .ctx-high { background: #f85149; }
+
+    /* Charts section */
+    .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+    .chart-card {
+      background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px;
+    }
+    .chart-card h3 { font-size: 12px; font-weight: 600; color: #8b949e; margin-bottom: 12px; }
+    .chart-wrap { position: relative; height: 160px; }
+
+    /* Page actions */
+    .actions { display: flex; gap: 10px; align-items: center; }
+    .btn {
+      font-family: inherit; font-size: 12px; padding: 6px 14px;
+      border-radius: 6px; cursor: pointer; border: none; font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.8; }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .btn-screenshot { background: #388bfd; color: #fff; }
+
+    /* Context text output area */
+    .context-output {
+      background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+      padding: 12px; font-size: 11px; color: #8b949e;
+      max-height: 200px; overflow-y: auto; display: none;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .context-output.visible { display: block; }
+
+    footer {
+      padding: 12px 24px;
+      border-top: 1px solid #21262d;
+      font-size: 11px; color: #8b949e;
+      display: flex; justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span class="status-dot"></span>Slock Ops Console</h1>
+  <div class="actions">
+    <span class="last-update" id="lastUpdate">Updating...</span>
+    <button class="btn btn-screenshot" onclick="takeScreenshot()">📸 Screenshot</button>
+    <button class="btn btn-secondary" onclick="toggleContext()">📄 Context</button>
+    <button class="btn btn-secondary" onclick="refreshData()">↻ Refresh</button>
+  </div>
+</header>
+
+<main>
+  <div>
+    <div class="section-title">Agents</div>
+    <div class="agents-grid" id="agentsGrid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">Activity & Context Window (per minute)</div>
+    <div class="charts-grid" id="chartsGrid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <div id="contextOutput" class="context-output"></div>
+</main>
+
+<footer>
+  <span>API: <a href="/api/agents" style="color:#388bfd">/api/agents</a> · <a href="/api/agents/:id/metrics" style="color:#388bfd">/api/agents/:id/metrics</a> · <a href="/api/context" style="color:#388bfd">/api/context</a> · <a href="/api/screenshot" style="color:#388bfd">/api/screenshot</a></span>
+  <span id="footerNote">port 5939</span>
+</footer>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────────────────
+const API_BASE = '';           // same origin
+const POLL_MS  = 60_000;       // 1 minute polling
+const HISTORY_POINTS = 60;     // 60 minutes of history
+
+// ─── State ─────────────────────────────────────────────────────────────────
+let agentsData  = [];
+let charts      = {};
+let contextVisible = false;
+
+// ─── Mock data (used when API is unavailable) ────────────────────────────
+function generateMockAgents() {
+  const names = ['Alice', 'Bob', 'Zeus', 'Tim', 'clone', 'QA'];
+  const statuses = ['active', 'active', 'idle', 'active', 'inactive', 'active'];
+  return names.map((name, i) => {
+    const active = statuses[i] === 'active';
+    const total  = active ? Math.floor(Math.random() * 80000) + 20000 : 0;
+    const input  = Math.floor(total * 0.55);
+    const output = Math.floor(total * 0.30);
+    const cache  = total - input - output;
+    const ctxPct = active ? Math.floor(Math.random() * 85) + 5 : 0;
+    const actCount = active ? Math.floor(Math.random() * 40) + 5 : 0;
+    return {
+      id: name.toLowerCase(),
+      name,
+      status: statuses[i],
+      tokens: { input, output, cache, total },
+      contextWindowPct: ctxPct,
+      activityCount: actCount,
+      model: 'claude-sonnet-4-6',
+    };
+  });
+}
+
+function generateMockHistory(agentId) {
+  const now = Date.now();
+  return Array.from({ length: HISTORY_POINTS }, (_, i) => ({
+    ts: now - (HISTORY_POINTS - i) * 60_000,
+    activityCount: Math.floor(Math.random() * 5),
+    contextWindowPct: Math.min(100, 20 + i * 0.8 + Math.random() * 8),
+  }));
+}
+
+// ─── Data fetching ──────────────────────────────────────────────────────────
+async function fetchAgents() {
+  try {
+    const r = await fetch(`${API_BASE}/api/agents`);
+    if (!r.ok) throw new Error('not ok');
+    return await r.json();
+  } catch {
+    return generateMockAgents();
+  }
+}
+
+async function fetchHistory(agentId) {
+  try {
+    const r = await fetch(`${API_BASE}/api/agents/${agentId}/metrics`);
+    if (!r.ok) throw new Error('not ok');
+    return await r.json();
+  } catch {
+    return generateMockHistory(agentId);
+  }
+}
+
+async function fetchContext() {
+  try {
+    const r = await fetch(`${API_BASE}/api/context`);
+    if (!r.ok) throw new Error('not ok');
+    return await r.json();
+  } catch {
+    return { note: 'API not yet connected — showing mock data', agents: agentsData };
+  }
+}
+
+// ─── Rendering ──────────────────────────────────────────────────────────────
+function ctxClass(pct) {
+  if (pct < 50) return 'ctx-low';
+  if (pct < 80) return 'ctx-mid';
+  return 'ctx-high';
+}
+
+function fmtTokens(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function renderAgentCard(agent) {
+  const t = agent.tokens;
+  const total = t.total || 1;
+  const iw = ((t.input  / total) * 100).toFixed(1);
+  const ow = ((t.output / total) * 100).toFixed(1);
+  const cw = ((t.cache  / total) * 100).toFixed(1);
+  const ctx = agent.contextWindowPct || 0;
+  return `
+    <div class="agent-card ${agent.status}">
+      <div class="agent-header">
+        <span class="agent-name">${agent.name}</span>
+        <span class="badge ${agent.status}">${agent.status}</span>
+      </div>
+      <div class="metrics-row">
+        <div class="metric">
+          <div class="metric-label">Total Tokens</div>
+          <div class="metric-value">${fmtTokens(t.total)}</div>
+          <div class="metric-sub">${agent.model || '—'}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Activity / min</div>
+          <div class="metric-value">${agent.activityCount}</div>
+          <div class="metric-sub">turns this session</div>
+        </div>
+      </div>
+      <div class="token-bar-label">Token ratio — input / output / cache</div>
+      <div class="token-bar">
+        <div class="input"  style="width:${iw}%"></div>
+        <div class="output" style="width:${ow}%"></div>
+        <div class="cache"  style="width:${cw}%"></div>
+      </div>
+      <div class="token-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#388bfd"></div>${iw}% input</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>${ow}% output</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#9e6a03"></div>${cw}% cache</div>
+      </div>
+      <div class="ctx-bar-wrap">
+        <div class="token-bar-label">Context window: ${ctx}%</div>
+        <div class="ctx-bar"><div class="fill ${ctxClass(ctx)}" style="width:${ctx}%"></div></div>
+      </div>
+    </div>`;
+}
+
+function renderChartCard(agent) {
+  return `
+    <div class="chart-card">
+      <h3>${agent.name} — activity &amp; context / min</h3>
+      <div class="chart-wrap">
+        <canvas id="chart-${agent.id}"></canvas>
+      </div>
+    </div>`;
+}
+
+function buildChart(agent, history) {
+  const canvas = document.getElementById(`chart-${agent.id}`);
+  if (!canvas) return;
+  if (charts[agent.id]) { charts[agent.id].destroy(); }
+  const labels = history.map(h => {
+    const d = new Date(h.ts);
+    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+  });
+  charts[agent.id] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Activity',
+          data: history.map(h => h.activityCount),
+          borderColor: '#388bfd',
+          backgroundColor: 'rgba(56,139,253,0.12)',
+          tension: 0.3,
+          pointRadius: 0,
+          yAxisID: 'y1',
+        },
+        {
+          label: 'Ctx %',
+          data: history.map(h => h.contextWindowPct),
+          borderColor: '#e3b341',
+          backgroundColor: 'rgba(227,179,65,0.08)',
+          tension: 0.3,
+          pointRadius: 0,
+          yAxisID: 'y2',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10 } } },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', font: { size: 9 }, maxTicksLimit: 8 },
+          grid: { color: '#21262d' },
+        },
+        y1: {
+          position: 'left',
+          ticks: { color: '#388bfd', font: { size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Activity', color: '#388bfd', font: { size: 9 } },
+        },
+        y2: {
+          position: 'right',
+          min: 0, max: 100,
+          ticks: { color: '#e3b341', font: { size: 9 }, callback: v => v + '%' },
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: 'Ctx %', color: '#e3b341', font: { size: 9 } },
+        },
+      },
+    },
+  });
+}
+
+// ─── Main update loop ───────────────────────────────────────────────────────
+async function refreshData() {
+  agentsData = await fetchAgents();
+
+  // Cards
+  document.getElementById('agentsGrid').innerHTML = agentsData.map(renderAgentCard).join('');
+
+  // Charts
+  const activeAgents = agentsData.filter(a => a.status !== 'inactive');
+  document.getElementById('chartsGrid').innerHTML = activeAgents.map(renderChartCard).join('');
+  for (const agent of activeAgents) {
+    const history = await fetchHistory(agent.id);
+    buildChart(agent, history);
+  }
+
+  document.getElementById('lastUpdate').textContent =
+    'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+async function takeScreenshot() {
+  try {
+    const r = await fetch(`${API_BASE}/api/screenshot`);
+    if (!r.ok) throw new Error('not ok');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `ops-console-${Date.now()}.png`; a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert('Screenshot API not yet available. Run the backend server on :5939.');
+  }
+}
+
+async function toggleContext() {
+  const el = document.getElementById('contextOutput');
+  contextVisible = !contextVisible;
+  if (contextVisible) {
+    const data = await fetchContext();
+    el.textContent = JSON.stringify(data, null, 2);
+    el.classList.add('visible');
+  } else {
+    el.classList.remove('visible');
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+refreshData();
+setInterval(refreshData, POLL_MS);
+</script>
+</body>
+</html>
