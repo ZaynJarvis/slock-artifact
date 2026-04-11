@@ -1,0 +1,14 @@
+{
+  "name": "slock-ops-console",
+  "version": "0.1.0",
+  "description": "Independent ops console for slock agent monitoring",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "puppeteer": "^23.0.0"
+  }
+}
