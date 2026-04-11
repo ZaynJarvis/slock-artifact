@@ -259,9 +259,20 @@ app.get('/api/context', async (_, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/screenshot — placeholder for QA to implement
-app.get('/api/screenshot', (_, res) => {
-  res.status(501).json({ error: 'Screenshot endpoint — pending QA implementation (puppeteer)' });
+// GET /api/screenshot — full-page screenshot via puppeteer
+app.get('/api/screenshot', async (_, res) => {
+  try {
+    const { default: puppeteer } = await import('puppeteer');
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.goto(`http://localhost:${PORT}`, { waitUntil: 'networkidle0', timeout: 15000 });
+    const buf = await page.screenshot({ fullPage: true, type: 'png' });
+    await browser.close();
+    res.type('image/png').send(buf);
+  } catch (err) {
+    res.status(500).json({ error: 'Screenshot failed: ' + err.message });
+  }
 });
 
 // --- Start ---
