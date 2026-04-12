@@ -3,170 +3,646 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Slock Ops Console</title>
+  <title>SLOCK // OPS CONSOLE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      background: #0d1117;
-      color: #e6edf3;
-      min-height: 100vh;
+    :root {
+      --void: #050505;
+      --surface: #0a0a0f;
+      --elevated: #111118;
+      --panel: #0d0d14;
+      --border: #1a1a2e;
+      --border-bright: #2a2a40;
+      --text: #d0d0e0;
+      --muted: #5a5a7a;
+      --red: #F75049;
+      --red-dim: #BB4141;
+      --lime: #73F855;
+      --cyan: #5EF6FF;
+      --indigo: #0E0EE7;
+      --amber: #FFD84A;
+      --white: #FFFFFF;
+      --font-display: 'Orbitron', monospace;
+      --font-ui: 'Rajdhani', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+      --clip-sm: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      --clip-md: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+      --clip-lg: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
     }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--void);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* === CRT Scanline Overlay === */
+    body::after {
+      content: '';
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none; z-index: 10;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(94, 246, 255, 0.015) 2px,
+        rgba(94, 246, 255, 0.015) 4px
+      );
+      animation: scanDrift 8s linear infinite;
+    }
+
+    /* === Horizontal scan line === */
+    body::before {
+      content: '';
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      opacity: 0.15;
+      z-index: 11;
+      pointer-events: none;
+      animation: scanLine 6s linear infinite;
+    }
+
+    @keyframes scanDrift {
+      0% { background-position: 0 0; }
+      100% { background-position: 0 4px; }
+    }
+
+    @keyframes scanLine {
+      0% { top: -2px; }
+      100% { top: 100vh; }
+    }
+
+    /* === Glitch system (ported from night-city) === */
+
+    /* Glitch jump — body jitter via translate3d + skewX */
+    @keyframes cp-glitch-jump {
+      0%, 100% { transform: translate3d(0,0,0) skewX(0deg); filter: saturate(1) brightness(1); }
+      9%  { transform: translate3d(-1.4px, 0.2px, 0) skewX(-0.6deg); filter: saturate(1.12) brightness(1.04); }
+      18% { transform: translate3d(-1.44px, -0.32px, 0) skewX(-0.8deg); filter: saturate(1.22) brightness(1.08); }
+      31% { transform: translate3d(2.4px, -0.8px, 0) skewX(0.8deg); filter: saturate(1.28) brightness(1.1); }
+      43% { transform: translate3d(1.2px, 1px, 0) skewX(-0.3deg); filter: saturate(1.18) brightness(1.05); }
+      57% { transform: translate3d(-1.2px, -0.2px, 0) skewX(-0.28deg); filter: saturate(1.26) brightness(1.11); }
+      74% { transform: translate3d(-0.49px, 0.48px, 0) skewX(-0.12deg); filter: saturate(1.08) brightness(1.03); }
+    }
+
+    /* RGB edge-block artifacts — snap on/off instantly */
+    @keyframes cp-edge-blocks {
+      0%,  5%   { opacity: 0; transform: translate3d(0,0,0); }
+      5.1%      { opacity: 0.92; transform: translate3d(-4%,0,0); }
+      20%       { opacity: 0.92; transform: translate3d(-4%,0,0); }
+      20.1%     { opacity: 0.88; transform: translate3d(2.4%,-2px,0); }
+      38%       { opacity: 0.88; transform: translate3d(2.4%,-2px,0); }
+      38.1%     { opacity: 0.82; transform: translate3d(3%,1px,0); }
+      55%       { opacity: 0.82; transform: translate3d(3%,1px,0); }
+      55.1%     { opacity: 0.6; transform: translate3d(-0.9%,0,0); }
+      68%       { opacity: 0.6; transform: translate3d(-0.9%,0,0); }
+      68.1%     { opacity: 0.3; transform: translate3d(0,0,0); }
+      80%       { opacity: 0.3; transform: translate3d(0,0,0); }
+      80.1%, 100% { opacity: 0; transform: translate3d(0,0,0); }
+    }
+
+    @keyframes cp-edge-blocks-tail {
+      0%, 15%   { opacity: 0; transform: translate3d(0,0,0); }
+      15.1%     { opacity: 0.78; transform: translate3d(1.2%,0,0); }
+      32%       { opacity: 0.78; transform: translate3d(1.2%,0,0); }
+      32.1%     { opacity: 0.72; transform: translate3d(3%,0,0); }
+      52%       { opacity: 0.72; transform: translate3d(3%,0,0); }
+      52.1%     { opacity: 0.35; transform: translate3d(-0.45%,0,0); }
+      70%       { opacity: 0.35; transform: translate3d(-0.45%,0,0); }
+      70.1%, 100% { opacity: 0; transform: translate3d(0,0,0); }
+    }
+
+    /* Hue strobe — box-shadow pulses through red/cyan/lime/indigo */
+    @keyframes cp-hue-strobe {
+      0%   { box-shadow: 0 0 0 rgba(247,80,73,0); }
+      25%  { box-shadow: 0 0 24px rgba(247,80,73,0.22); }
+      50%  { box-shadow: 0 0 26px rgba(94,246,255,0.2); }
+      75%  { box-shadow: 0 0 26px rgba(115,248,85,0.2); }
+      100% { box-shadow: 0 0 0 rgba(14,14,231,0); }
+    }
+
+    /* Glitch text effect (title) */
+    .glitch {
+      position: relative;
+      display: inline-block;
+    }
+    .glitch::before, .glitch::after {
+      content: attr(data-text);
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+    }
+    .glitch::before {
+      color: var(--cyan);
+      z-index: 1;
+      clip-path: inset(0 0 80% 0);
+      opacity: 0;
+    }
+    .glitch::after {
+      color: var(--red);
+      z-index: 2;
+      clip-path: inset(80% 0 0 0);
+      opacity: 0;
+    }
+
+    /* Glitch hover — applies to interactive elements */
+    .glitch-hover {
+      position: relative;
+      isolation: isolate;
+    }
+    .glitch-hover::before,
+    .glitch-hover::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+    }
+    .glitch-hover::before {
+      background:
+        rgba(247,80,73,0.88) left 0 top 16% / 18% 0.45rem no-repeat,
+        rgba(247,80,73,0.72) right 2% top calc(16% + 1.2em) / 10.8% 2px no-repeat,
+        rgba(94,246,255,0.84) right 0 top 38% / 22% 0.7rem no-repeat,
+        rgba(94,246,255,0.6) left 4% top calc(38% + 0.8em) / 9.9% 1px no-repeat,
+        rgba(115,248,85,0.82) left 0 bottom 14% / 16% 0.55rem no-repeat,
+        rgba(14,14,231,0.76) right 0 bottom 10% / 14% 0.85rem no-repeat;
+      mix-blend-mode: screen;
+      filter: saturate(1.35);
+    }
+    .glitch-hover::after {
+      background:
+        rgba(255,255,255,0.82) left 0 top 22% / 100% 1px no-repeat,
+        rgba(247,80,73,0.65) right 0 top 46% / 40% 1px no-repeat,
+        rgba(94,246,255,0.7) left 0 bottom 18% / 55% 1px no-repeat,
+        rgba(0,0,0,0.5) left 0 bottom 15% / 100% 2px no-repeat;
+      mix-blend-mode: screen;
+    }
+
+    .glitch-hover:hover,
+    .glitch-hover:focus-visible,
+    .agent-card:hover,
+    .btn:hover {
+      animation: cp-glitch-jump 340ms steps(4, jump-none) 1, cp-hue-strobe 420ms linear 1;
+    }
+    .glitch-hover:hover::before,
+    .glitch-hover:focus-visible::before {
+      animation: cp-edge-blocks 480ms steps(8, jump-none) 1 30ms;
+    }
+    .glitch-hover:hover::after,
+    .glitch-hover:focus-visible::after {
+      animation: cp-edge-blocks-tail 560ms steps(7, jump-none) 1 80ms;
+    }
+
+    /* Header glitch burst on hover */
+    header:hover .glitch::before,
+    header:hover .glitch::after {
+      opacity: 1;
+    }
+    header:hover .glitch::before {
+      animation: cp-edge-blocks 480ms steps(8, jump-none) 1;
+    }
+    header:hover .glitch::after {
+      animation: cp-edge-blocks-tail 560ms steps(7, jump-none) 1 80ms;
+    }
+
+    /* === Neon pulse === */
+    @keyframes neonPulse {
+      0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px var(--lime)); }
+      50% { opacity: 0.7; filter: drop-shadow(0 0 2px var(--lime)); }
+    }
+    @keyframes neonPulseRed {
+      0%, 100% { box-shadow: 0 0 8px var(--red), inset 0 0 4px rgba(247,80,73,0.1); }
+      50% { box-shadow: 0 0 3px var(--red-dim), inset 0 0 2px rgba(247,80,73,0.05); }
+    }
+    @keyframes neonPulseCyan {
+      0%, 100% { box-shadow: 0 0 8px var(--cyan), inset 0 0 4px rgba(94,246,255,0.1); }
+      50% { box-shadow: 0 0 3px rgba(94,246,255,0.4), inset 0 0 2px rgba(94,246,255,0.05); }
+    }
+
+    /* === Header === */
     header {
-      padding: 16px 24px;
-      border-bottom: 1px solid #21262d;
+      padding: 14px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: relative;
     }
-    header h1 { font-size: 16px; font-weight: 600; color: #58a6ff; }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--red), var(--cyan) 40%, var(--lime) 70%, var(--amber));
+      opacity: 0.8;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-mark {
+      width: 32px; height: 32px;
+      border: 2px solid var(--red);
+      clip-path: var(--clip-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-size: 11px; font-weight: 900;
+      color: var(--red);
+      animation: neonPulseRed 3s infinite;
+    }
+
+    header h1 {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--white);
+      text-transform: uppercase;
+      letter-spacing: 0.25em;
+    }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .status-indicator {
+      display: flex; align-items: center; gap: 6px;
+    }
     .status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #3fb950; display: inline-block; margin-right: 6px;
-      animation: pulse 2s infinite;
+      width: 8px; height: 8px;
+      background: var(--lime);
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      animation: neonPulse 2s infinite;
     }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-    .last-update { font-size: 11px; color: #8b949e; }
-    main { padding: 20px 24px; display: grid; gap: 20px; }
 
-    /* Agent cards */
-    .section-title {
-      font-size: 12px; font-weight: 600; color: #8b949e;
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin-bottom: 12px;
+    .last-update {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
     }
-    .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-    .agent-card {
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 8px;
-      padding: 16px;
-    }
-    .agent-card.active { border-color: #238636; }
-    .agent-card.idle   { border-color: #9e6a03; }
-    .agent-card.inactive { border-color: #21262d; }
-    .agent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .agent-name { font-size: 14px; font-weight: 600; }
-    .badge {
-      font-size: 10px; padding: 2px 8px; border-radius: 12px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    .badge.active { background: #1a4737; color: #3fb950; }
-    .badge.idle   { background: #3d2e00; color: #e3b341; }
-    .badge.inactive { background: #21262d; color: #8b949e; }
 
-    .metrics-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-    .metric { background: #0d1117; border-radius: 4px; padding: 8px; }
-    .metric-label { font-size: 10px; color: #8b949e; margin-bottom: 2px; }
-    .metric-value { font-size: 16px; font-weight: 700; color: #e6edf3; }
-    .metric-sub { font-size: 10px; color: #8b949e; margin-top: 1px; }
-
-    /* Token ratio bar */
-    .token-bar-label { font-size: 10px; color: #8b949e; margin-bottom: 4px; }
-    .token-bar { height: 6px; border-radius: 3px; background: #21262d; overflow: hidden; display: flex; }
-    .token-bar .input  { background: #388bfd; }
-    .token-bar .output { background: #3fb950; }
-    .token-bar .cache  { background: #9e6a03; }
-    .token-legend { display: flex; gap: 12px; margin-top: 4px; }
-    .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #8b949e; }
-    .legend-dot { width: 6px; height: 6px; border-radius: 50%; }
-
-    /* Context window meter */
-    .ctx-bar-wrap { margin-top: 10px; }
-    .ctx-bar { height: 4px; border-radius: 2px; background: #21262d; overflow: hidden; margin-top: 4px; }
-    .ctx-bar .fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
-    .ctx-low  { background: #3fb950; }
-    .ctx-mid  { background: #e3b341; }
-    .ctx-high { background: #f85149; }
-
-    /* Charts section */
-    .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
-    .chart-card {
-      background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px;
-    }
-    .chart-card h3 { font-size: 12px; font-weight: 600; color: #8b949e; margin-bottom: 12px; }
-    .chart-wrap { position: relative; height: 160px; }
-
-    /* Page actions */
-    .actions { display: flex; gap: 10px; align-items: center; }
+    /* === Actions === */
+    .actions { display: flex; gap: 8px; align-items: center; }
     .btn {
-      font-family: inherit; font-size: 12px; padding: 6px 14px;
-      border-radius: 6px; cursor: pointer; border: none; font-weight: 600;
-      transition: opacity 0.15s;
+      font-family: var(--font-ui);
+      font-size: 12px; font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      border: 1px solid;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      transition: all 0.15s;
+      clip-path: var(--clip-sm);
+      background: transparent;
     }
-    .btn:hover { opacity: 0.8; }
-    .btn-primary { background: #238636; color: #fff; }
-    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-    .btn-screenshot { background: #388bfd; color: #fff; }
+    .btn:hover { transform: translate(-1px, -1px); }
+    .btn:active { transform: translate(1px, 1px); }
 
-    /* Context text output area */
+    .btn-red { color: var(--red); border-color: var(--red); }
+    .btn-red:hover { background: var(--red); color: var(--void); }
+    .btn-cyan { color: var(--cyan); border-color: var(--cyan); }
+    .btn-cyan:hover { background: var(--cyan); color: var(--void); }
+    .btn-ghost { color: var(--muted); border-color: var(--border-bright); }
+    .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* === Main === */
+    main { padding: 20px 24px; display: grid; gap: 24px; }
+
+    /* === Section headings === */
+    .section-header {
+      display: flex; align-items: baseline; gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .section-header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0;
+      width: 80px; height: 1px;
+      background: var(--red);
+    }
+    .section-id {
+      font-family: var(--font-display);
+      font-size: 9px; font-weight: 700;
+      color: var(--red);
+      letter-spacing: 0.2em;
+    }
+    .section-title {
+      font-family: var(--font-ui);
+      font-size: 13px; font-weight: 700;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+
+    /* === Agent cards === */
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    .agent-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      clip-path: var(--clip-md);
+      padding: 18px;
+      position: relative;
+      transition: all 0.2s;
+    }
+    .agent-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 3px; height: 100%;
+    }
+    .agent-card.active { border-color: var(--lime); }
+    .agent-card.active::before { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+    .agent-card.active:hover { box-shadow: 0 0 20px rgba(115,248,85,0.1); }
+
+    .agent-card.idle { border-color: var(--amber); }
+    .agent-card.idle::before { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+    .agent-card.inactive { border-color: var(--border); }
+    .agent-card.inactive::before { background: var(--muted); }
+
+    .agent-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .agent-name {
+      font-family: var(--font-display);
+      font-size: 13px; font-weight: 700;
+      color: var(--white);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .badge {
+      font-family: var(--font-mono);
+      font-size: 9px; padding: 3px 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border: 1px solid;
+      clip-path: var(--clip-sm);
+    }
+    .badge.active { color: var(--lime); border-color: var(--lime); background: rgba(115,248,85,0.08); }
+    .badge.idle   { color: var(--amber); border-color: var(--amber); background: rgba(255,216,74,0.08); }
+    .badge.inactive { color: var(--muted); border-color: var(--border); }
+
+    .metrics-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; margin-bottom: 14px;
+    }
+    .metric {
+      background: var(--void);
+      border: 1px solid var(--border);
+      padding: 10px;
+      clip-path: var(--clip-sm);
+    }
+    .metric-label {
+      font-family: var(--font-mono);
+      font-size: 8px; color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      margin-bottom: 4px;
+    }
+    .metric-value {
+      font-family: var(--font-display);
+      font-size: 20px; font-weight: 700;
+      color: var(--cyan);
+    }
+    .metric-sub {
+      font-family: var(--font-mono);
+      font-size: 8px; color: var(--muted);
+      margin-top: 3px;
+    }
+    .metric-value.messages { color: var(--lime); }
+
+    /* === Token ratio bar === */
+    .token-bar-label {
+      font-family: var(--font-mono);
+      font-size: 8px; color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .token-bar {
+      height: 6px; background: var(--void);
+      overflow: hidden; display: flex;
+      border: 1px solid var(--border);
+    }
+    .token-bar .input  { background: var(--indigo); }
+    .token-bar .output { background: var(--lime); }
+    .token-bar .cache  { background: var(--amber); }
+
+    .token-legend { display: flex; gap: 12px; margin-top: 6px; }
+    .legend-item {
+      display: flex; align-items: center; gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 8px; color: var(--muted);
+    }
+    .legend-dot { width: 6px; height: 6px; }
+
+    /* === Context window meter === */
+    .ctx-bar-wrap { margin-top: 14px; }
+    .ctx-bar {
+      height: 4px; background: var(--void);
+      overflow: hidden; margin-top: 4px;
+      border: 1px solid var(--border);
+    }
+    .ctx-bar .fill { height: 100%; transition: width 0.5s; }
+    .ctx-low  { background: var(--lime); box-shadow: 0 0 6px var(--lime); }
+    .ctx-mid  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .ctx-high { background: var(--red); box-shadow: 0 0 8px var(--red); animation: neonPulseRed 1.5s infinite; }
+
+    /* === Charts === */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 16px;
+    }
+    .chart-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      clip-path: var(--clip-md);
+      padding: 18px;
+      position: relative;
+    }
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      top: 0; right: 14px;
+      width: 40px; height: 2px;
+      background: var(--cyan);
+      opacity: 0.6;
+    }
+    .chart-card h3 {
+      font-family: var(--font-display);
+      font-size: 10px; font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+    .chart-wrap { position: relative; height: 170px; }
+
+    /* === Context output === */
     .context-output {
-      background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
-      padding: 12px; font-size: 11px; color: #8b949e;
-      max-height: 200px; overflow-y: auto; display: none;
+      background: var(--void);
+      border: 1px solid var(--cyan);
+      clip-path: var(--clip-md);
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 11px; color: var(--lime);
+      max-height: 200px; overflow-y: auto;
+      display: none;
       white-space: pre-wrap; word-break: break-all;
+      box-shadow: 0 0 12px rgba(94,246,255,0.1);
     }
     .context-output.visible { display: block; }
+    .context-output::-webkit-scrollbar { width: 4px; }
+    .context-output::-webkit-scrollbar-track { background: var(--void); }
+    .context-output::-webkit-scrollbar-thumb { background: var(--cyan); }
 
+    /* === Footer (sticky bottom) === */
     footer {
       padding: 12px 24px;
-      border-top: 1px solid #21262d;
-      font-size: 11px; color: #8b949e;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 9px; color: var(--muted);
       display: flex; justify-content: space-between;
+      background: var(--surface);
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 8;
+    }
+    main { padding-bottom: 48px; }
+    footer::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: 0;
+      width: 120px; height: 1px;
+      background: linear-gradient(90deg, var(--red), transparent);
+    }
+    footer a { color: var(--cyan); text-decoration: none; }
+    footer a:hover { color: var(--red); text-shadow: 0 0 8px var(--red); }
+
+    /* === Corner decorations for the page === */
+    .corner-tl, .corner-br {
+      position: fixed;
+      width: 40px; height: 40px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .corner-tl {
+      top: 0; left: 0;
+      border-top: 2px solid var(--red);
+      border-left: 2px solid var(--red);
+      opacity: 0.4;
+    }
+    .corner-br {
+      bottom: 0; right: 0;
+      border-bottom: 2px solid var(--cyan);
+      border-right: 2px solid var(--cyan);
+      opacity: 0.4;
+    }
+
+    /* === Runtime badge === */
+    .runtime-tag {
+      font-family: var(--font-mono);
+      font-size: 8px;
+      color: var(--amber);
+      border: 1px solid var(--amber);
+      padding: 1px 6px;
+      display: inline-block;
+      opacity: 0.7;
     }
   </style>
 </head>
 <body>
 
+<div class="corner-tl"></div>
+<div class="corner-br"></div>
+
 <header>
-  <h1><span class="status-dot"></span>Slock Ops Console</h1>
+  <div class="header-left">
+    <div class="logo-mark">OP</div>
+    <div>
+      <div class="header-eyebrow">SYS://SLOCK.OPS</div>
+      <h1>
+        <span class="glitch" data-text="OPS CONSOLE">OPS CONSOLE</span>
+      </h1>
+    </div>
+  </div>
   <div class="actions">
-    <span class="last-update" id="lastUpdate">Updating...</span>
-    <button class="btn btn-screenshot" onclick="takeScreenshot()">📸 Screenshot</button>
-    <button class="btn btn-secondary" onclick="toggleContext()">📄 Context</button>
-    <button class="btn btn-secondary" onclick="refreshData()">↻ Refresh</button>
+    <div class="status-indicator">
+      <span class="status-dot"></span>
+      <span class="last-update" id="lastUpdate">INITIALIZING...</span>
+    </div>
+    <button class="btn btn-red" onclick="takeScreenshot()">Capture</button>
+    <button class="btn btn-cyan" onclick="toggleContext()">Raw Feed</button>
+    <button class="btn btn-ghost" onclick="refreshData()">Refresh</button>
   </div>
 </header>
 
 <main>
   <div>
-    <div class="section-title">Agents</div>
-    <div class="agents-grid" id="agentsGrid">
-      <!-- populated by JS -->
+    <div class="section-header">
+      <span class="section-id">01 // ACTIVE NODES</span>
+      <span class="section-title">Agent Telemetry</span>
     </div>
+    <div class="agents-grid" id="agentsGrid"></div>
   </div>
 
   <div>
-    <div class="section-title">Activity & Context Window (per minute)</div>
-    <div class="charts-grid" id="chartsGrid">
-      <!-- populated by JS -->
+    <div class="section-header">
+      <span class="section-id">02 // SIGNAL MONITOR</span>
+      <span class="section-title">Activity & Context Timeseries</span>
     </div>
+    <div class="charts-grid" id="chartsGrid"></div>
   </div>
 
   <div id="contextOutput" class="context-output"></div>
 </main>
 
 <footer>
-  <span>API: <a href="/api/agents" style="color:#388bfd">/api/agents</a> · <a href="/api/agents/:id/metrics" style="color:#388bfd">/api/agents/:id/metrics</a> · <a href="/api/context" style="color:#388bfd">/api/context</a> · <a href="/api/screenshot" style="color:#388bfd">/api/screenshot</a></span>
-  <span id="footerNote">port 5939</span>
+  <span>ENDPOINTS: <a href="/api/agents">/api/agents</a> &middot; <a href="/api/agents/:id/metrics">/api/agents/:id/metrics</a> &middot; <a href="/api/context">/api/context</a> &middot; <a href="/api/screenshot">/api/screenshot</a></span>
+  <span id="footerNote">NODE://PORT:5939</span>
 </footer>
 
 <script>
-// ─── Config ────────────────────────────────────────────────────────────────
-const API_BASE = '';           // same origin
-const POLL_MS  = 60_000;       // 1 minute polling
-const HISTORY_POINTS = 60;     // 60 minutes of history
+// --- Config ---
+const API_BASE = '';
+const POLL_MS  = 60_000;
+const HISTORY_POINTS = 60;
 
-// ─── State ─────────────────────────────────────────────────────────────────
+// --- State ---
 let agentsData  = [];
 let charts      = {};
 let contextVisible = false;
 
-// ─── Mock data (used when API is unavailable) ────────────────────────────
+// --- Mock data ---
 function generateMockAgents() {
-  const names = ['Alice', 'Bob', 'Zeus', 'Tim', 'clone', 'QA'];
-  const statuses = ['active', 'active', 'idle', 'active', 'inactive', 'active'];
+  const names = ['Alice', 'Bob', 'Zeus', 'Tim', 'Zouk', 'QA'];
+  const statuses = ['active', 'active', 'idle', 'active', 'active', 'active'];
   return names.map((name, i) => {
     const active = statuses[i] === 'active';
     const total  = active ? Math.floor(Math.random() * 80000) + 20000 : 0;
@@ -187,16 +663,7 @@ function generateMockAgents() {
   });
 }
 
-function generateMockHistory(agentId) {
-  const now = Date.now();
-  return Array.from({ length: HISTORY_POINTS }, (_, i) => ({
-    ts: now - (HISTORY_POINTS - i) * 60_000,
-    activityCount: Math.floor(Math.random() * 5),
-    contextWindowPct: Math.min(100, 20 + i * 0.8 + Math.random() * 8),
-  }));
-}
-
-// ─── Data fetching ──────────────────────────────────────────────────────────
+// --- Data fetching ---
 async function fetchAgents() {
   try {
     const r = await fetch(`${API_BASE}/api/agents`);
@@ -213,7 +680,7 @@ async function fetchHistory(agentId) {
     if (!r.ok) throw new Error('not ok');
     return await r.json();
   } catch {
-    return generateMockHistory(agentId);
+    return [];
   }
 }
 
@@ -223,11 +690,11 @@ async function fetchContext() {
     if (!r.ok) throw new Error('not ok');
     return await r.json();
   } catch {
-    return { note: 'API not yet connected — showing mock data', agents: agentsData };
+    return { note: 'FEED DISCONNECTED — MOCK DATA ACTIVE', agents: agentsData };
   }
 }
 
-// ─── Rendering ──────────────────────────────────────────────────────────────
+// --- Rendering ---
 function ctxClass(pct) {
   if (pct < 50) return 'ctx-low';
   if (pct < 80) return 'ctx-mid';
@@ -247,37 +714,39 @@ function renderAgentCard(agent) {
   const ow = ((t.output / total) * 100).toFixed(1);
   const cw = ((t.cache  / total) * 100).toFixed(1);
   const ctx = agent.contextWindowPct || 0;
+  const runtimeTag = agent.runtime && agent.runtime !== 'claude'
+    ? `<span class="runtime-tag">${agent.runtime.toUpperCase()}</span> ` : '';
   return `
-    <div class="agent-card ${agent.status}">
+    <div class="agent-card glitch-hover ${agent.status}">
       <div class="agent-header">
         <span class="agent-name">${agent.name}</span>
-        <span class="badge ${agent.status}">${agent.status}</span>
+        <span class="badge ${agent.status}">${agent.status === 'active' ? 'SIGNAL ACTIVE' : agent.status === 'idle' ? 'STANDBY' : 'OFFLINE'}</span>
       </div>
       <div class="metrics-row">
         <div class="metric">
-          <div class="metric-label">Total Tokens</div>
+          <div class="metric-label">Token Throughput</div>
           <div class="metric-value">${fmtTokens(t.total)}</div>
-          <div class="metric-sub">${agent.model || '—'}</div>
+          <div class="metric-sub">${runtimeTag}${agent.model || '—'}</div>
         </div>
         <div class="metric">
-          <div class="metric-label">Activity / min</div>
-          <div class="metric-value">${agent.activityCount}</div>
-          <div class="metric-sub">turns this session</div>
+          <div class="metric-label">Signal Count</div>
+          <div class="metric-value messages">${agent.activityCount}</div>
+          <div class="metric-sub">total turns this session</div>
         </div>
       </div>
-      <div class="token-bar-label">Token ratio — input / output / cache</div>
+      <div class="token-bar-label">Token allocation — input / output / cache</div>
       <div class="token-bar">
         <div class="input"  style="width:${iw}%"></div>
         <div class="output" style="width:${ow}%"></div>
         <div class="cache"  style="width:${cw}%"></div>
       </div>
       <div class="token-legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#388bfd"></div>${iw}% input</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>${ow}% output</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#9e6a03"></div>${cw}% cache</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--indigo)"></div>${iw}% in</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--lime)"></div>${ow}% out</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>${cw}% cache</div>
       </div>
       <div class="ctx-bar-wrap">
-        <div class="token-bar-label">Context window: ${ctx}%</div>
+        <div class="token-bar-label">Context buffer: ${ctx}%${ctx >= 80 ? ' ⚠ CRITICAL' : ''}</div>
         <div class="ctx-bar"><div class="fill ${ctxClass(ctx)}" style="width:${ctx}%"></div></div>
       </div>
     </div>`;
@@ -286,7 +755,7 @@ function renderAgentCard(agent) {
 function renderChartCard(agent) {
   return `
     <div class="chart-card">
-      <h3>${agent.name} — activity &amp; context / min</h3>
+      <h3>${agent.name} — Signal & Context / min</h3>
       <div class="chart-wrap">
         <canvas id="chart-${agent.id}"></canvas>
       </div>
@@ -309,19 +778,21 @@ function buildChart(agent, history) {
         {
           label: 'Activity',
           data: history.map(h => h.activityCount),
-          borderColor: '#388bfd',
-          backgroundColor: 'rgba(56,139,253,0.12)',
+          borderColor: '#6a6a8a',
+          backgroundColor: 'rgba(106,106,138,0.05)',
           tension: 0.3,
           pointRadius: 0,
+          borderWidth: 1.5,
           yAxisID: 'y1',
         },
         {
           label: 'Ctx %',
           data: history.map(h => h.contextWindowPct),
-          borderColor: '#e3b341',
-          backgroundColor: 'rgba(227,179,65,0.08)',
+          borderColor: '#F75049',
+          backgroundColor: 'rgba(247,80,73,0.05)',
           tension: 0.3,
           pointRadius: 0,
+          borderWidth: 1.5,
           yAxisID: 'y2',
         },
       ],
@@ -330,38 +801,45 @@ function buildChart(agent, history) {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10 } } },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#5a5a7a',
+            font: { size: 9, family: 'Space Mono' },
+            boxWidth: 8,
+            boxHeight: 2,
+          }
+        }
+      },
       scales: {
         x: {
-          ticks: { color: '#8b949e', font: { size: 9 }, maxTicksLimit: 8 },
-          grid: { color: '#21262d' },
+          ticks: { color: '#5a5a7a', font: { size: 8, family: 'Space Mono' }, maxTicksLimit: 8 },
+          grid: { color: 'rgba(26,26,46,0.8)' },
         },
         y1: {
           position: 'left',
-          ticks: { color: '#388bfd', font: { size: 9 } },
-          grid: { color: '#21262d' },
-          title: { display: true, text: 'Activity', color: '#388bfd', font: { size: 9 } },
+          ticks: { color: '#6a6a8a', font: { size: 8, family: 'Space Mono' } },
+          grid: { color: 'rgba(26,26,46,0.8)' },
+          title: { display: true, text: 'SIGNAL', color: '#6a6a8a', font: { size: 8, family: 'Space Mono', weight: '700' } },
         },
         y2: {
           position: 'right',
           min: 0, max: 100,
-          ticks: { color: '#e3b341', font: { size: 9 }, callback: v => v + '%' },
+          ticks: { color: '#F75049', font: { size: 8, family: 'Space Mono' }, callback: v => v + '%' },
           grid: { drawOnChartArea: false },
-          title: { display: true, text: 'Ctx %', color: '#e3b341', font: { size: 9 } },
+          title: { display: true, text: 'CTX %', color: '#F75049', font: { size: 8, family: 'Space Mono', weight: '700' } },
         },
       },
     },
   });
 }
 
-// ─── Main update loop ───────────────────────────────────────────────────────
+// --- Main update loop ---
 async function refreshData() {
   agentsData = await fetchAgents();
 
-  // Cards
   document.getElementById('agentsGrid').innerHTML = agentsData.map(renderAgentCard).join('');
 
-  // Charts
   const activeAgents = agentsData.filter(a => a.status !== 'inactive');
   document.getElementById('chartsGrid').innerHTML = activeAgents.map(renderChartCard).join('');
   for (const agent of activeAgents) {
@@ -370,10 +848,10 @@ async function refreshData() {
   }
 
   document.getElementById('lastUpdate').textContent =
-    'Updated ' + new Date().toLocaleTimeString();
+    'SYNCED ' + new Date().toLocaleTimeString().toUpperCase();
 }
 
-// ─── Actions ─────────────────────────────────────────────────────────────────
+// --- Actions ---
 async function takeScreenshot() {
   try {
     const r = await fetch(`${API_BASE}/api/screenshot`);
@@ -381,10 +859,10 @@ async function takeScreenshot() {
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `ops-console-${Date.now()}.png`; a.click();
+    a.href = url; a.download = `ops-capture-${Date.now()}.png`; a.click();
     URL.revokeObjectURL(url);
   } catch {
-    alert('Screenshot API not yet available. Run the backend server on :5939.');
+    alert('CAPTURE MODULE OFFLINE');
   }
 }
 
@@ -400,7 +878,7 @@ async function toggleContext() {
   }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────
+// --- Init ---
 refreshData();
 setInterval(refreshData, POLL_MS);
 </script>
