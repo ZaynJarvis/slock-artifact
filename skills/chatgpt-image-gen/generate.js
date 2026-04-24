@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Drive ChatGPT (in user's already-open Chrome via CDP) to generate images and save them locally.
+// This script ONLY generates and saves. Uploading and deletion are deliberately separate concerns —
+// see upload.js and the agent workflow in SKILL.md (the decision to upload/delete belongs AFTER the
+// user has seen the image, not bundled into the generation step).
 
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
 const { chromium } = require('playwright');
-const { uploadImage } = require('./upload');
 
 function parseArgs(argv) {
   const args = {
@@ -24,25 +25,18 @@ function parseArgs(argv) {
     else if (a === '--start') args.start = parseInt(next(), 10) || 0;
     else if (a === '--cdp') args.cdp = next();
     else if (a === '--timeout') args.timeoutMs = parseInt(next(), 10);
-    else if (a === '--upload') args.upload = true;
-    else if (a === '--upload-base') args.uploadBase = next();
-    else if (a === '--upload-key-env') args.uploadKeyEnv = next();
-    else if (a === '--yes' || a === '-y') args.yes = true;
-    else if (a === '--delete-local' || a === '--delete-local-after-upload') args.deleteLocal = true;
     else if (a === '--reuse-chat') args.newChat = false;
     else if (a === '-h' || a === '--help') {
       console.log(
         'Usage: node generate.js (--prompt "..." | --prompts file.json) [options]\n' +
-        '  --output ./images         output dir (default ./images)\n' +
-        '  --start N                 start index (default 0)\n' +
-        '  --cdp URL                 CDP endpoint (default http://127.0.0.1:9222)\n' +
-        '  --timeout MS              image-wait timeout (default 180000)\n' +
-        '  --upload                  upload saved PNG to image.zaynjarvis.com (prompts for confirm unless --yes)\n' +
-        '  --yes, -y                 skip the upload confirmation prompt\n' +
-        '  --delete-local            remove the local PNG after a successful upload\n' +
-        '  --reuse-chat              keep using the existing ChatGPT conversation (default: start a new one)\n' +
-        '  --upload-base URL         override upload host\n' +
-        '  --upload-key-env NAME     env var for upload key (default ZAYN_IMAGE_KEY)'
+        '  --output ./images   output dir (default ./images)\n' +
+        '  --start N           start index (default 0)\n' +
+        '  --cdp URL           CDP endpoint (default http://127.0.0.1:9222)\n' +
+        '  --timeout MS        image-wait timeout per prompt (default 180000)\n' +
+        '  --reuse-chat        keep the existing ChatGPT conversation (default: start a new one)\n' +
+        '\n' +
+        'Uploading is intentionally not part of this script. After generation,\n' +
+        'show the PNG to the user and ask before running `upload.js` or `rm`.'
       );
       process.exit(0);
     }
@@ -70,14 +64,12 @@ async function findOrOpenChatGPT(browser, { newChat = true } = {}) {
   if (newChat || !page.url().startsWith('https://chatgpt.com')) {
     // Navigating to the root loads a fresh conversation; prior chat stays in history.
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded' });
-    // Give the composer a moment to mount; some SPA transitions keep the old tab DOM briefly.
     await page.waitForTimeout(1000);
   }
   return page;
 }
 
 async function submitPrompt(page, prompt) {
-  // Try several known selectors for the composer
   const selectors = [
     '#prompt-textarea',
     'div[contenteditable="true"][data-virtualkeyboard="true"]',
@@ -92,11 +84,9 @@ async function submitPrompt(page, prompt) {
   }
   if (!composer) throw new Error('Could not find ChatGPT composer');
   await composer.click();
-  // Clear any existing text
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.keyboard.press('Backspace');
   await page.keyboard.type(prompt, { delay: 5 });
-  // Send
   await page.keyboard.press('Enter');
 }
 
@@ -138,12 +128,10 @@ async function waitForGeneratedImage(page, beforeSet, timeoutMs) {
 }
 
 async function downloadImage(page, url, destPath) {
-  // Use the page's fetch so cookies/auth headers are included
   const result = await page.evaluate(async (u) => {
     const r = await fetch(u, { credentials: 'include' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const buf = await r.arrayBuffer();
-    // Convert to base64 in chunks to avoid stack overflow
     const bytes = new Uint8Array(buf);
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -161,15 +149,6 @@ function loadPrompts(args) {
     return parsed;
   }
   throw new Error('Provide --prompt "..." or --prompts file.json');
-}
-
-function promptYesNo(question) {
-  // Read one line from stdin. If stdin is not a TTY and is closed, resolve to '' (treated as no).
-  return new Promise((resolve) => {
-    if (!process.stdin.readable) return resolve('');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
-    rl.question(question, (answer) => { rl.close(); resolve(answer); });
-  });
 }
 
 (async () => {
@@ -199,39 +178,6 @@ function promptYesNo(question) {
       entry.ok = true;
       entry.src = src;
       console.log(`[${idx}] Saved → ${file}`);
-
-      if (args.upload) {
-        let confirmed = args.yes;
-        if (!confirmed) {
-          const answer = await promptYesNo(`[${idx}] Upload ${file} to image.zaynjarvis.com? [y/N] `);
-          confirmed = /^\s*y(es)?\s*$/i.test(answer);
-        }
-        if (!confirmed) {
-          console.log(`[${idx}] Upload declined; local file kept at ${file}`);
-          entry.uploadSkipped = true;
-        } else {
-          const keyEnv = args.uploadKeyEnv || 'ZAYN_IMAGE_KEY';
-          const uploadKey = (process.env[keyEnv] || '').trim();
-          if (!uploadKey) throw new Error(`${keyEnv} not set; cannot --upload`);
-          const up = await uploadImage({
-            baseUrl: args.uploadBase || 'https://image.zaynjarvis.com',
-            uploadKey,
-            filePath: file,
-          });
-          entry.uploadUrl = up.url;
-          entry.uploadDuplicate = !!up.duplicate;
-          console.log(`[${idx}] Uploaded → ${up.url}${up.duplicate ? ' (dup)' : ''}`);
-          if (args.deleteLocal) {
-            try {
-              fs.unlinkSync(file);
-              entry.localDeleted = true;
-              console.log(`[${idx}] Removed local ${file}`);
-            } catch (e) {
-              console.error(`[${idx}] Failed to remove local ${file}: ${e.message}`);
-            }
-          }
-        }
-      }
     } catch (e) {
       entry.error = e.message;
       console.error(`[${idx}] FAILED: ${e.message}`);
@@ -240,8 +186,7 @@ function promptYesNo(question) {
   }
 
   console.log('[chatgpt-image-gen] Done. Browser left open.');
-  // Don't close the user's browser
-  await browser.close().catch(() => {}); // disconnects CDP, doesn't kill Chrome
+  await browser.close().catch(() => {});
 })().catch((e) => {
   console.error('Fatal:', e);
   process.exit(1);
