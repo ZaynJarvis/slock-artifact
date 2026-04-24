@@ -3,11 +3,18 @@
 
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 const { chromium } = require('playwright');
 const { uploadImage } = require('./upload');
 
 function parseArgs(argv) {
-  const args = { output: './images', cdp: 'http://127.0.0.1:9222', start: 0, timeoutMs: 180000 };
+  const args = {
+    output: './images',
+    cdp: 'http://127.0.0.1:9222',
+    start: 0,
+    timeoutMs: 180000,
+    newChat: true,
+  };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -20,27 +27,52 @@ function parseArgs(argv) {
     else if (a === '--upload') args.upload = true;
     else if (a === '--upload-base') args.uploadBase = next();
     else if (a === '--upload-key-env') args.uploadKeyEnv = next();
+    else if (a === '--yes' || a === '-y') args.yes = true;
+    else if (a === '--delete-local' || a === '--delete-local-after-upload') args.deleteLocal = true;
+    else if (a === '--reuse-chat') args.newChat = false;
     else if (a === '-h' || a === '--help') {
-      console.log('Usage: node generate.js (--prompt "..." | --prompts file.json) [--output ./images] [--start N] [--cdp http://127.0.0.1:9222]');
+      console.log(
+        'Usage: node generate.js (--prompt "..." | --prompts file.json) [options]\n' +
+        '  --output ./images         output dir (default ./images)\n' +
+        '  --start N                 start index (default 0)\n' +
+        '  --cdp URL                 CDP endpoint (default http://127.0.0.1:9222)\n' +
+        '  --timeout MS              image-wait timeout (default 180000)\n' +
+        '  --upload                  upload saved PNG to image.zaynjarvis.com (prompts for confirm unless --yes)\n' +
+        '  --yes, -y                 skip the upload confirmation prompt\n' +
+        '  --delete-local            remove the local PNG after a successful upload\n' +
+        '  --reuse-chat              keep using the existing ChatGPT conversation (default: start a new one)\n' +
+        '  --upload-base URL         override upload host\n' +
+        '  --upload-key-env NAME     env var for upload key (default ZAYN_IMAGE_KEY)'
+      );
       process.exit(0);
     }
   }
   return args;
 }
 
-async function findOrOpenChatGPT(browser) {
+async function findOrOpenChatGPT(browser, { newChat = true } = {}) {
+  let page = null;
   for (const ctx of browser.contexts()) {
     for (const p of ctx.pages()) {
       const url = p.url();
       if (url.startsWith('https://chatgpt.com') || url.startsWith('https://chat.openai.com')) {
-        await p.bringToFront();
-        return p;
+        page = p;
+        break;
       }
     }
+    if (page) break;
   }
-  const ctx = browser.contexts()[0] || (await browser.newContext());
-  const page = await ctx.newPage();
-  await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded' });
+  if (!page) {
+    const ctx = browser.contexts()[0] || (await browser.newContext());
+    page = await ctx.newPage();
+  }
+  await page.bringToFront();
+  if (newChat || !page.url().startsWith('https://chatgpt.com')) {
+    // Navigating to the root loads a fresh conversation; prior chat stays in history.
+    await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded' });
+    // Give the composer a moment to mount; some SPA transitions keep the old tab DOM briefly.
+    await page.waitForTimeout(1000);
+  }
   return page;
 }
 
@@ -131,6 +163,15 @@ function loadPrompts(args) {
   throw new Error('Provide --prompt "..." or --prompts file.json');
 }
 
+function promptYesNo(question) {
+  // Read one line from stdin. If stdin is not a TTY and is closed, resolve to '' (treated as no).
+  return new Promise((resolve) => {
+    if (!process.stdin.readable) return resolve('');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question(question, (answer) => { rl.close(); resolve(answer); });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv);
   const prompts = loadPrompts(args);
@@ -139,8 +180,8 @@ function loadPrompts(args) {
 
   console.log(`[chatgpt-image-gen] Connecting to Chrome at ${args.cdp} ...`);
   const browser = await chromium.connectOverCDP(args.cdp);
-  const page = await findOrOpenChatGPT(browser);
-  console.log(`[chatgpt-image-gen] Using tab: ${page.url()}`);
+  const page = await findOrOpenChatGPT(browser, { newChat: args.newChat });
+  console.log(`[chatgpt-image-gen] Using tab: ${page.url()}${args.newChat ? ' (fresh chat)' : ' (reused chat)'}`);
 
   for (let i = args.start; i < prompts.length; i++) {
     const prompt = prompts[i];
@@ -158,18 +199,38 @@ function loadPrompts(args) {
       entry.ok = true;
       entry.src = src;
       console.log(`[${idx}] Saved → ${file}`);
+
       if (args.upload) {
-        const keyEnv = args.uploadKeyEnv || 'ZAYN_IMAGE_KEY';
-        const uploadKey = (process.env[keyEnv] || '').trim();
-        if (!uploadKey) throw new Error(`${keyEnv} not set; cannot --upload`);
-        const up = await uploadImage({
-          baseUrl: args.uploadBase || 'https://image.zaynjarvis.com',
-          uploadKey,
-          filePath: file,
-        });
-        entry.uploadUrl = up.url;
-        entry.uploadDuplicate = !!up.duplicate;
-        console.log(`[${idx}] Uploaded → ${up.url}${up.duplicate ? ' (dup)' : ''}`);
+        let confirmed = args.yes;
+        if (!confirmed) {
+          const answer = await promptYesNo(`[${idx}] Upload ${file} to image.zaynjarvis.com? [y/N] `);
+          confirmed = /^\s*y(es)?\s*$/i.test(answer);
+        }
+        if (!confirmed) {
+          console.log(`[${idx}] Upload declined; local file kept at ${file}`);
+          entry.uploadSkipped = true;
+        } else {
+          const keyEnv = args.uploadKeyEnv || 'ZAYN_IMAGE_KEY';
+          const uploadKey = (process.env[keyEnv] || '').trim();
+          if (!uploadKey) throw new Error(`${keyEnv} not set; cannot --upload`);
+          const up = await uploadImage({
+            baseUrl: args.uploadBase || 'https://image.zaynjarvis.com',
+            uploadKey,
+            filePath: file,
+          });
+          entry.uploadUrl = up.url;
+          entry.uploadDuplicate = !!up.duplicate;
+          console.log(`[${idx}] Uploaded → ${up.url}${up.duplicate ? ' (dup)' : ''}`);
+          if (args.deleteLocal) {
+            try {
+              fs.unlinkSync(file);
+              entry.localDeleted = true;
+              console.log(`[${idx}] Removed local ${file}`);
+            } catch (e) {
+              console.error(`[${idx}] Failed to remove local ${file}: ${e.message}`);
+            }
+          }
+        }
       }
     } catch (e) {
       entry.error = e.message;
