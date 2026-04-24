@@ -1,0 +1,9 @@
+{
+  "name": "chatgpt-image-gen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
