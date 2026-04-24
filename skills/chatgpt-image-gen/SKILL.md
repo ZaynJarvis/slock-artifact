@@ -1,11 +1,13 @@
 ---
 name: chatgpt-image-gen
-description: Generate images via the ChatGPT web UI by attaching to the user's already-running Chrome (CDP). Submits a prompt in a fresh conversation, waits for the image to render, downloads it as a numbered PNG into ./images/, and appends a results.jsonl log entry. Optionally uploads the PNG to image.zaynjarvis.com (asks for confirmation first) and can remove the local copy after a successful upload. Use when the user asks to "generate an image with ChatGPT", "make a ChatGPT/DALL-E image and save it locally", or to batch-run prompts.
+description: Generate images via the ChatGPT web UI by attaching to the user's already-running Chrome (CDP). Submits a prompt in a fresh conversation, waits for the image to render, and downloads it as a numbered PNG. `generate.js` only generates. Uploading to image.zaynjarvis.com and local-file cleanup are separate commands (`upload.js`) so the agent can show the image to the user FIRST and only then ask whether to upload / delete. Use when the user asks to "generate an image with ChatGPT", "make a ChatGPT/DALL-E image and save it locally", or to batch-run prompts.
 ---
 
 # chatgpt-image-gen
 
 Drives the **logged-in** ChatGPT tab in the user's own Chrome via the Chrome DevTools Protocol. No separate Chromium, no re-login. Each invocation opens a **fresh ChatGPT conversation** by default.
+
+Design principle: `generate.js` only generates + saves to disk. Uploading and deletion live in `upload.js` / plain `rm`, so the agent can show the user the PNG first and only then ask whether to upload and/or delete. Bundling those decisions into `generate.js` would force the agent to commit before the user sees the image, which is the wrong UX.
 
 ## Prerequisites
 
@@ -20,61 +22,60 @@ Drives the **logged-in** ChatGPT tab in the user's own Chrome via the Chrome Dev
    ```
    Verify: `curl -s http://127.0.0.1:9222/json/version` should return JSON. First time, open https://chatgpt.com/ in that Chrome window and log in (Google SSO is fine). The login persists in `~/chrome-cdp-profile` for future runs.
 2. From the skill dir: `npm install` (one-time, installs `playwright`).
-3. For `--upload`: export `ZAYN_IMAGE_KEY` (host: `image.zaynjarvis.com`, endpoint `/api/upload`).
+3. For uploads: export `ZAYN_IMAGE_KEY` (host: `image.zaynjarvis.com`, endpoint `/api/upload`).
+
+## Agent workflow (the expected flow)
+
+1. Run `generate.js --prompt "..."` — generates a PNG in `./images/` in a fresh ChatGPT conversation.
+2. Show the PNG to the user (attach it in chat).
+3. Ask the user explicitly: "要不要上传到 image.zaynjarvis.com？" and "要不要删掉本地？"
+4. Act on their answer:
+   - Upload: `ZAYN_IMAGE_KEY=... node upload.js ./images/001.png` (add `--delete` to remove the local PNG after a successful upload).
+   - Don't upload + delete anyway: `rm ./images/001.png`.
+   - Keep as-is: do nothing.
+
+Do **not** decide upload/delete before the user sees the image.
 
 ## Run
 
 ```bash
-# Generate only (new ChatGPT conversation, PNG saved locally):
+# Generate only — fresh ChatGPT conversation, PNG saved to ./images/001.png
 node generate.js --prompt "a watercolor fox at dusk"
 
-# Generate + offer upload (interactive y/N prompt on stderr):
-ZAYN_IMAGE_KEY=... node generate.js --prompt "..." --upload
-
-# Non-interactive: auto-accept upload and delete local copy after success:
-ZAYN_IMAGE_KEY=... node generate.js --prompt "..." --upload --yes --delete-local
-
-# Batch run:
+# Batch
 node generate.js --prompts prompts.json
+
+# After the user sees it and says yes:
+ZAYN_IMAGE_KEY=... node upload.js ./images/001.png            # just upload
+ZAYN_IMAGE_KEY=... node upload.js ./images/001.png --delete   # upload + rm local
 ```
 
-### Flags
+### `generate.js` flags
 
 - `--prompt "..."` / `--prompts file.json` — one prompt or a JSON array of strings
 - `--output ./images` — output dir (default `./images`)
 - `--start N` — skip the first N prompts in a batch
 - `--cdp URL` — CDP endpoint (default `http://127.0.0.1:9222`)
 - `--timeout MS` — image-wait timeout per prompt (default 180000 = 3m)
-- `--upload` — after each save, offer to upload to `image.zaynjarvis.com`. Prompts `[y/N]` on stderr unless `--yes` is set.
-- `--yes` / `-y` — skip the upload confirmation (for non-interactive callers)
-- `--delete-local` / `--delete-local-after-upload` — remove the local PNG after a successful upload (no-op if upload was declined or failed)
 - `--reuse-chat` — keep using the existing ChatGPT conversation instead of navigating to a fresh one (default: new conversation every run)
-- `--upload-base URL` — override upload host
-- `--upload-key-env NAME` — env var holding the upload key (default `ZAYN_IMAGE_KEY`)
 
-`prompts.json` is a JSON array of strings.
+Note: there is deliberately no `--upload` flag here. Use `upload.js` post-hoc after the user confirms.
 
-## Standalone uploader
+### `upload.js` flags
 
 ```bash
-ZAYN_IMAGE_KEY=... node upload.js ./images/001.png           # upload only
-ZAYN_IMAGE_KEY=... node upload.js ./images/001.png --delete  # upload then rm
+node upload.js <file> [--base-url URL] [--key-env NAME] [--delete]
 ```
-Posts multipart to `<base>/api/upload` with fields `uploadKey` + `image`. Returns `{ url, key, duplicate, contentType, size, filename }`. Pass `--delete` to unlink the local file after a successful upload.
+- `--delete` / `--delete-local` — remove the local file after a successful upload.
+- `--base-url` — default `https://image.zaynjarvis.com`.
+- `--key-env` — env var that holds the upload key (default `ZAYN_IMAGE_KEY`).
+
+Posts multipart to `<base>/api/upload` with fields `uploadKey` + `image`. Returns `{ url, key, duplicate, contentType, size, filename }`.
 
 ## Output
 
 - `./images/001.png`, `002.png`, …
-- `./images/results.jsonl` — one line per prompt: `{ index, prompt, file, ok, src?, uploadUrl?, uploadDuplicate?, uploadSkipped?, localDeleted?, error? }`
-
-## Agent workflow (recommended)
-
-When an agent invokes the skill on a user's behalf in zouk / chat:
-
-1. Run `generate.js --prompt "..."` (no `--upload`) to get the local PNG.
-2. Send the PNG to the chat as an attachment so the user can see it.
-3. Ask the user: "also upload to the image CDN?"
-4. If yes: re-run with `--upload --yes --delete-local` on the same prompt (or call `upload.js <file> --delete` on the existing PNG). If no: remove the local PNG with `rm` — no reason to hoard generated images on disk once they're in the chat.
+- `./images/results.jsonl` — one line per prompt: `{ index, prompt, file, ok, src?, error? }`. Uploads do not write into this file (they're separate invocations); capture the upload URL from `upload.js`' stdout.
 
 ## How it works
 
@@ -83,7 +84,6 @@ When an agent invokes the skill on a user's behalf in zouk / chat:
 3. Type the prompt into the composer (`#prompt-textarea` / `div[contenteditable]`), press Enter.
 4. Poll for an `<img>` whose `src` matches `/estuary\/content|oaiusercontent/` and whose `naturalWidth >= 256`, that wasn't present before submit.
 5. Fetch the image bytes with the page's auth context (`fetch(..., { credentials: 'include' })` inside `page.evaluate`) and write to disk.
-6. If `--upload` and user confirms: POST multipart to `image.zaynjarvis.com/api/upload`, store the returned URL in `results.jsonl`.
 
 ## Failure modes
 
@@ -91,4 +91,3 @@ When an agent invokes the skill on a user's behalf in zouk / chat:
 - **Login wall / Cloudflare check** → re-login in the visible Chrome window, re-run.
 - **DOM drift** → selectors in `generate.js` may need updates; ChatGPT changes its UI often.
 - **Rate limit** → script aborts and logs the error in `results.jsonl`.
-- **Upload declined** → `uploadSkipped: true` in `results.jsonl`; local PNG kept.
