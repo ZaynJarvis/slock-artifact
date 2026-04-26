@@ -82,7 +82,7 @@ Posts multipart to `<base>/api/upload` with fields `uploadKey` + `image`. Return
 1. Connect to running Chrome via CDP (`chromium.connectOverCDP`).
 2. Find the ChatGPT tab (or open one). Navigate to `https://chatgpt.com/` to start a fresh conversation unless `--reuse-chat` is set.
 3. Type the prompt into the composer (`#prompt-textarea` / `div[contenteditable]`), press Enter.
-4. Poll for an `<img>` whose `src` matches `/estuary\/content|oaiusercontent/` and whose `naturalWidth >= 256`, that wasn't present before submit.
+4. Poll all `<img>` elements (not `main img` — ChatGPT renders generated images outside `<main>`) for a new estuary/oaiusercontent URL. Two-phase: thumbnail (`p=gpp`) appears first during generation; full-size (`p=fs`, 1254×1254) appears when complete. Detect `p=fs` by URL pattern — `naturalWidth` is 0 while the image is still downloading.
 5. Fetch the image bytes with the page's auth context (`fetch(..., { credentials: 'include' })` inside `page.evaluate`) and write to disk.
 
 ## Failure modes
@@ -91,3 +91,26 @@ Posts multipart to `<base>/api/upload` with fields `uploadKey` + `image`. Return
 - **Login wall / Cloudflare check** → re-login in the visible Chrome window, re-run.
 - **DOM drift** → selectors in `generate.js` may need updates; ChatGPT changes its UI often.
 - **Rate limit** → script aborts and logs the error in `results.jsonl`.
+
+## Known pitfalls (discovered batch 09, 2026-04-26)
+
+**1. `main img` selector misses the generated image**
+ChatGPT (2025+ layout) renders generated images outside `<main>`. Always use `document.querySelectorAll('img')` globally.
+
+**2. Rainbow gradient placeholder (`p=gpp`) returned as result**
+ChatGPT shows a `p=gpp` (512×512) animated placeholder *during* generation. If the baseline snapshot misses it, the script returns it as the "new image". Fix: snapshot ALL estuary/oaiusercontent `<img>` srcs (including `p=gpp`) before submitting. Detect the real image strictly by `p=fs` in the URL — do not rely on `naturalWidth`, which is 0 while the full-size image loads.
+
+**3. 180s default timeout too short**
+DALL-E 3 via ChatGPT takes 2–4 minutes. Always use `--timeout 300000` (5 min). After the thumbnail (`p=gpp`) appears, wait the **full remaining deadline** for `p=fs` — not a short fixed window.
+
+**4. Index collision when re-running with `--start`**
+If you re-run a batch starting at index N, output files are numbered from `001.png` again — they overwrite any previously saved files. Move or rename earlier outputs before re-running.
+
+**5. Content policy on era/brand names**
+Phrases like "Silver Age Comic" trigger copyright-similarity refusals. Rephrase using descriptive visual ingredients: "heroic vintage comic book style, completely original character" rather than trademarked era names.
+
+**6. Start a fresh ChatGPT chat per batch**
+Use the default (`newChat: true`) — do NOT pass `--reuse-chat` for a new batch. A fresh conversation avoids interference from prior generation history.
+
+**7. Delegate long batch pipelines to a subagent**
+Running 20 images × 3 min inline floods the main agent's context window with log output. Spawn a general-purpose subagent for the full pipeline (generate → rename → resize → commit → PR) and monitor from the main context.
