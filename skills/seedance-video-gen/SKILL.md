@@ -134,6 +134,21 @@ The task API is async. Status flow: `queued` → `running` → `succeeded` (or `
 3. **Video URL is short-lived.** ~24 h expiry. `generate.js` downloads immediately; if you ever capture only the URL, re-download from Ark won't work later.
 4. **Top-level params, not prompt flags.** Ark used to accept `--resolution 2k` inside the text content; the current API takes `resolution` / `ratio` / `duration` as top-level body fields. The script does this correctly — just be aware if you hand-craft a request.
 5. **2K is heaviest.** Generation noticeably slower and more expensive at 2K vs 1080p. For iteration, default to 1080p; switch to 2k for finals.
+6. **Real-person ref images are policy-blocked.** Any image whose classifier flags as "real person" hits `HTTP 400 InputImageSensitiveContentDetected.PrivacyInformation` ("The request failed because the input image may contain real person"). This is policy, not a transient error — retries don't help.
+7. **AI-generated realistic faces are blocked too.** The classifier doesn't distinguish between a real photo and a high-quality AI portrait / character sheet. We tried using a Sora/ChatGPT-generated character sheet (3-view + detail crops, clearly stylized as a design doc) as the `reference_image` and it still got filtered — same error code. So "I'll just make a virtual person ref" does NOT work as a workaround.
+
+## Working around the real-person filter
+
+Three viable paths, in order of speed-to-result:
+
+1. **Ark's pre-vetted virtual avatar library** (火山方舟体验中心 → 虚拟人像库). 10,000+ preset virtual characters, filterable by gender / age / profession. Hover an entry to copy the asset URI; reference it in the prompt as `@素材名`. This is the *only* officially supported way to use a recurring human character — these URIs are platform-whitelisted, so they don't go through the same filter as user-uploaded images.
+2. **Text-to-video (no `reference_image`).** Translate the desired character's features (face shape, hair, wardrobe, vibe) into the prompt and let the model invent the person. Each run produces a slightly different person — identity will drift across clips. Use this only when you don't need character consistency across multiple videos.
+3. **Enterprise allowlist via 工单 (support ticket).** Submit a use-case ticket asking Volcengine to allowlist real-person refs on your account. KYC + use-case review, weeks of turnaround. Only for serious B2B usage.
+
+Things that look like workarounds but **don't** work:
+- Uploading an AI-generated portrait of a fictional person (see pitfall #6).
+- Stylizing the ref into a "character design sheet" — still blocked.
+- Lowering resolution or duration — the filter runs on the input image at submit time, before generation parameters matter.
 
 ## Region differences
 
