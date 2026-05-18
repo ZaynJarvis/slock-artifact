@@ -119,6 +119,22 @@ The task API is async. Status flow: `queued` → `running` → `succeeded` (or `
 - **`camera_fixed`** — boolean, default `false`. Forces a locked camera (no pans / zooms). Useful for plate shots or when the reference image is the framing you want held.
 - **`frames`** — alternative to `duration`. Lets you specify exact frame count instead of integer seconds; takes precedence over `duration` if both are set. Useful if you need frame-perfect timing.
 
+## Audio stability gap
+
+This skill does **not** yet fully support voice-stable multi-clip production.
+`reference_audio` is documented above as an Ark role, but `generate.js` does not
+yet expose repeatable reference-audio flags, speaker mapping, duration
+preflight, or original-audio concat guidance.
+
+Use the draft RFC at
+`context/rfcs/2026-05-18-seedance-audio-stability.md` before attempting
+Seedance videos where the same character voices must stay fixed across
+segments. The practical Seedance rule from the Dodo/Wangwang production is:
+keep full voice records for archive, pass short clean references whose combined
+duration is about `<=15.2s`, bind each reference to a named speaker in every
+prompt, and preserve each generated segment's original audio when concatenating
+the final video.
+
 ## Input image limits (Ark)
 
 - Formats: `jpeg` / `png` / `webp` / `bmp` / `tiff` / `gif` (+ `heic` / `heif` on Seedance 2.0)
